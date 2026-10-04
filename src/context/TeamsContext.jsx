@@ -2,13 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { searchTeams, getStandingsForTeam, getFixturesForTeam, getNextFixturesForTeam, ApiError } from '../services/api';
 import { matchTeam } from '../utils/matching';
 import { hasLiveFixture } from '../utils/liveStatus';
-import { CURRENT_SEASON, DEFAULT_LAST_MATCHES } from '../data/config';
+import { getCurrentSeason, getAvailableSeasons, DEFAULT_LAST_MATCHES } from '../data/config';
 
 const TeamsContext = createContext(null);
 
 const ROSTER_KEY = 'apf_roster_v1';
-const TEAM_DATA_PREFIX = 'apf_team_data_'; // + teamId
+const TEAM_DATA_PREFIX = 'apf_team_data_'; // + teamId + ':' + season
 const LAST_UPDATED_KEY = 'apf_last_updated';
+const SEASON_KEY = 'apf_season';
 
 // Durée pendant laquelle on considère les données d'une équipe (déjà en
 // mémoire côté client) comme fraîches, avant de les redemander au backend
@@ -35,18 +36,32 @@ function saveRoster(roster) {
   }
 }
 
-function loadTeamData(teamId) {
+function loadSeason() {
   try {
-    const raw = localStorage.getItem(TEAM_DATA_PREFIX + teamId);
+    const raw = localStorage.getItem(SEASON_KEY);
+    const parsed = raw ? Number(raw) : null;
+    return parsed && !Number.isNaN(parsed) ? parsed : getCurrentSeason();
+  } catch {
+    return getCurrentSeason();
+  }
+}
+
+function teamDataKey(teamId, season) {
+  return `${TEAM_DATA_PREFIX}${teamId}:${season}`;
+}
+
+function loadTeamData(teamId, season) {
+  try {
+    const raw = localStorage.getItem(teamDataKey(teamId, season));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveTeamData(teamId, data) {
+function saveTeamData(teamId, season, data) {
   try {
-    localStorage.setItem(TEAM_DATA_PREFIX + teamId, JSON.stringify(data));
+    localStorage.setItem(teamDataKey(teamId, season), JSON.stringify(data));
   } catch {
     // ignore
   }
@@ -54,11 +69,16 @@ function saveTeamData(teamId, data) {
 
 export function TeamsProvider({ children }) {
   const [roster, setRoster] = useState(loadRoster);
-  const [teamData, setTeamData] = useState({}); // { [teamId]: { standing, fixtures, nextFixtures, isLive, timestamp } }
+  const [season, setSeasonState] = useState(loadSeason);
+  const [teamData, setTeamData] = useState({}); // { [teamId]: { standing, fixtures, nextFixtures, isLive, timestamp } } — pour la saison sélectionnée
   const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem(LAST_UPDATED_KEY) || null);
   const [globalError, setGlobalError] = useState(null);
   const teamDataRef = useRef(teamData);
   teamDataRef.current = teamData;
+  const seasonRef = useRef(season);
+  seasonRef.current = season;
+
+  const availableSeasons = useMemo(() => getAvailableSeasons(), []);
 
   useEffect(() => saveRoster(roster), [roster]);
 
@@ -121,15 +141,17 @@ export function TeamsProvider({ children }) {
       delete next[teamId];
       return next;
     });
-    localStorage.removeItem(TEAM_DATA_PREFIX + teamId);
+    localStorage.removeItem(teamDataKey(teamId, seasonRef.current));
   }, []);
 
-  // Récupère (ou rafraîchit) les données classement + matchs d'une équipe.
-  // Si un match en direct est détecté, les prochaines lectures utiliseront
-  // un délai de fraîcheur beaucoup plus court (voir isFresh ci-dessous).
+  // Récupère (ou rafraîchit) les données classement + matchs d'une équipe,
+  // pour la saison actuellement sélectionnée. Si un match en direct est
+  // détecté, les prochaines lectures utiliseront un délai de fraîcheur
+  // beaucoup plus court (voir isFresh ci-dessous).
   const fetchTeamData = useCallback(
     async (teamId, { force = false } = {}) => {
-      const cached = teamDataRef.current[teamId] || loadTeamData(teamId);
+      const currentSeason = seasonRef.current;
+      const cached = teamDataRef.current[teamId] || loadTeamData(teamId, currentSeason);
       const ttl = cached?.isLive ? LIVE_CLIENT_TTL : CLIENT_DATA_TTL;
       const isFresh = cached && cached.timestamp && Date.now() - cached.timestamp < ttl;
 
@@ -145,9 +167,9 @@ export function TeamsProvider({ children }) {
 
       try {
         const [standingsResponse, pastResult, nextResult] = await Promise.all([
-          getStandingsForTeam(teamId, CURRENT_SEASON),
-          getFixturesForTeam(teamId, CURRENT_SEASON, DEFAULT_LAST_MATCHES),
-          getNextFixturesForTeam(teamId, CURRENT_SEASON, 3),
+          getStandingsForTeam(teamId, currentSeason),
+          getFixturesForTeam(teamId, currentSeason, DEFAULT_LAST_MATCHES),
+          getNextFixturesForTeam(teamId, currentSeason, 3),
         ]);
 
         // standingsResponse est un tableau de championnats (une équipe peut
@@ -165,6 +187,7 @@ export function TeamsProvider({ children }) {
           loading: false,
           error: null,
           timestamp: Date.now(),
+          season: currentSeason,
           isLive,
           league: leagueEntry?.league
             ? {
@@ -179,8 +202,13 @@ export function TeamsProvider({ children }) {
           nextFixtures,
         };
 
+        // Si l'utilisatrice a changé de saison pendant que cette requête
+        // était en cours, on ignore le résultat (devenu obsolète) plutôt
+        // que de l'appliquer à la mauvaise saison.
+        if (seasonRef.current !== currentSeason) return entry;
+
         setTeamData((prev) => ({ ...prev, [teamId]: entry }));
-        saveTeamData(teamId, entry);
+        saveTeamData(teamId, currentSeason, entry);
 
         // Met à jour le championnat de l'équipe dans le roster.
         if (entry.league) {
@@ -197,8 +225,10 @@ export function TeamsProvider({ children }) {
         return entry;
       } catch (err) {
         const message = err instanceof ApiError ? err.message : 'Impossible de récupérer les données actuellement.';
-        const entry = { loading: false, error: message, timestamp: Date.now(), standing: null, fixtures: [], nextFixtures: [], league: null, isLive: false };
-        setTeamData((prev) => ({ ...prev, [teamId]: entry }));
+        const entry = { loading: false, error: message, timestamp: Date.now(), season: currentSeason, standing: null, fixtures: [], nextFixtures: [], league: null, isLive: false };
+        if (seasonRef.current === currentSeason) {
+          setTeamData((prev) => ({ ...prev, [teamId]: entry }));
+        }
         return entry;
       }
     },
@@ -230,6 +260,32 @@ export function TeamsProvider({ children }) {
     setLastUpdated(null);
   }, []);
 
+  // Changer de saison : on vide les données affichées (celles de l'ancienne
+  // saison) et on relance la récupération pour toutes les équipes du
+  // roster, sur la nouvelle saison. Le roster lui-même (liste d'équipes)
+  // ne dépend pas de la saison et reste inchangé.
+  const changeSeason = useCallback((newSeason) => {
+    setSeasonState((prev) => {
+      if (prev === newSeason) return prev;
+      localStorage.setItem(SEASON_KEY, String(newSeason));
+      return newSeason;
+    });
+    setTeamData({});
+  }, []);
+
+  // Une fois la saison changée (pas au chargement initial — l'app reste
+  // "lazy" comme avant : les données se chargent quand une page en a
+  // besoin), recharge les données des équipes déjà suivies.
+  const isFirstSeasonRender = useRef(true);
+  useEffect(() => {
+    if (isFirstSeasonRender.current) {
+      isFirstSeasonRender.current = false;
+      return;
+    }
+    roster.forEach((team) => fetchTeamData(team.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [season]);
+
   // Actualisation automatique : uniquement les équipes ayant un match en
   // direct sont réinterrogées, à intervalle régulier, pour ne jamais
   // multiplier les appels API sur les équipes sans match en cours.
@@ -247,6 +303,9 @@ export function TeamsProvider({ children }) {
     () => ({
       roster,
       teamData,
+      season,
+      availableSeasons,
+      changeSeason,
       lastUpdated,
       globalError,
       resolveTeamNames,
@@ -256,7 +315,7 @@ export function TeamsProvider({ children }) {
       refreshAll,
       clearAllData,
     }),
-    [roster, teamData, lastUpdated, globalError, resolveTeamNames, confirmTeam, removeTeam, fetchTeamData, refreshAll, clearAllData]
+    [roster, teamData, season, availableSeasons, changeSeason, lastUpdated, globalError, resolveTeamNames, confirmTeam, removeTeam, fetchTeamData, refreshAll, clearAllData]
   );
 
   return <TeamsContext.Provider value={value}>{children}</TeamsContext.Provider>;
