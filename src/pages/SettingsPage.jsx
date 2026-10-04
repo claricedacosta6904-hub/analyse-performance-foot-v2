@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { useTeams } from '../context/TeamsContext';
-import { CURRENT_SEASON } from '../data/config';
 import { StatusMessage } from '../components/StatusMessage';
 
 export default function SettingsPage() {
-  const { roster, lastUpdated, refreshAll, clearAllData } = useTeams();
+  const { roster, lastUpdated, refreshAll, clearAllData, season, availableSeasons, changeSeason } = useTeams();
   const [refreshing, setRefreshing] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState(null);
@@ -47,13 +46,25 @@ export default function SettingsPage() {
       {message && <StatusMessage type={message.type}>{message.text}</StatusMessage>}
 
       <div className="stat-grid">
-        <div className="stat-card"><span className="value">{CURRENT_SEASON}</span><span className="label">SAISON ACTUELLE</span></div>
+        <div className="stat-card"><span className="value">{season}</span><span className="label">SAISON ACTUELLE</span></div>
         <div className="stat-card"><span className="value">{roster.length}</span><span className="label">NOMBRE D'ÉQUIPES</span></div>
         <div className="stat-card">
           <span className="value" style={{ fontSize: '1.1rem' }}>{lastUpdated ? new Date(lastUpdated).toLocaleString('fr-FR') : 'Jamais'}</span>
           <span className="label">DERNIÈRE ACTUALISATION</span>
         </div>
         <div className="stat-card"><span className="value" style={{ fontSize: '1.1rem' }}>Connectée</span><span className="label">ÉTAT DE L'API</span></div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: '0.95rem', marginBottom: 8 }}>Saison</h3>
+        <p style={{ color: 'var(--text-dim)', fontSize: '0.86rem', marginBottom: 12 }}>
+          La saison en cours est détectée automatiquement (elle passera à {season + 1} dès le début de la prochaine saison). Tu peux aussi consulter une saison précédente :
+        </p>
+        <select value={season} onChange={(e) => changeSeason(Number(e.target.value))}>
+          {availableSeasons.map((s) => (
+            <option key={s} value={s}>{s}-{s + 1}{s === availableSeasons[0] ? ' (actuelle)' : ''}</option>
+          ))}
+        </select>
       </div>
 
       <div className="card">
