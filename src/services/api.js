@@ -25,7 +25,13 @@ async function callFunction(endpoint, params = {}) {
   }
 
   if (json.error) {
-    throw new ApiError(json.error, json.code || 'UNKNOWN');
+    // TEMPORAIRE (débogage) : le backend peut joindre un champ "debug"
+    // avec la cause technique réelle (voir netlify/functions/football.js).
+    // On l'ajoute entre parenthèses pour la voir directement dans
+    // l'interface, sans avoir à ouvrir les logs Netlify. À retirer une
+    // fois le projet stabilisé.
+    const message = json.debug ? `${json.error} (${json.debug})` : json.error;
+    throw new ApiError(message, json.code || 'UNKNOWN');
   }
 
   return json;
