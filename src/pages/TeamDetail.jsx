@@ -29,7 +29,8 @@ export default function TeamDetail() {
     );
   }
 
-  const form = data?.fixtures ? computeFormStats(data.fixtures.slice(0, 5), teamId) : null;
+  const form = data?.fixtures?.length ? computeFormStats(data.fixtures.slice(0, 5), teamId) : null;
+  const formSequence = form?.sequence?.length ? form.sequence : data?.formFallback || [];
 
   return (
     <div>
@@ -40,7 +41,7 @@ export default function TeamDetail() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{team.name}</h1>
-          <p className="page-subtitle">{fmt(team.leagueName)} — {fmt(team.country)}</p>
+          <p className="page-subtitle">{fmt(data?.league?.name || team.leagueName)} — {fmt(team.country)}</p>
         </div>
         <button
           className="btn btn-danger"
@@ -56,6 +57,7 @@ export default function TeamDetail() {
       </div>
 
       {data?.error && <StatusMessage type="error">{data.error}</StatusMessage>}
+      {!data?.error && (data?.problems || []).map((m) => <StatusMessage key={m} type="warning">{m}</StatusMessage>)}
       {data?._warning && <StatusMessage type="warning">{data._warning}</StatusMessage>}
 
       {data?.loading || !data ? (
@@ -71,7 +73,7 @@ export default function TeamDetail() {
 
           <div className="card">
             <h3 style={{ fontSize: '0.95rem', marginBottom: 12 }}>Forme récente</h3>
-            <FormSequence sequence={form?.sequence || []} />
+            <FormSequence sequence={formSequence} />
           </div>
 
           {(data.nextFixtures || []).length > 0 && (

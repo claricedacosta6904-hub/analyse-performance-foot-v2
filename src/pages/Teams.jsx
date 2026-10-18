@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Plus } from 'lucide-react';
+import { Download, Plus, AlertTriangle } from 'lucide-react';
 import { useTeams } from '../context/TeamsContext';
 import { useEnsureAllTeamsData } from '../hooks/useEnsureData';
 import { FormSequence } from '../components/FormBadge';
-import { EmptyState, fmt, Skeleton } from '../components/StatusMessage';
+import { EmptyState, fmt, Skeleton, StatusMessage } from '../components/StatusMessage';
 import { exportToCSV } from '../utils/csvExport';
 import { computeFormStats } from '../utils/calculations';
+import { isSuspiciousTeam } from '../utils/matching';
 
 export default function Teams() {
   const navigate = useNavigate();
-  const { roster, teamData } = useTeams();
+  const { roster, teamData, season, fetchTeamData } = useTeams();
   const { initialLoading } = useEnsureAllTeamsData();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
@@ -27,17 +28,40 @@ export default function Teams() {
       .filter((t) => !leagueFilter || t.leagueName === leagueFilter)
       .map((t, i) => {
         const data = teamData[t.id];
-        const form = data?.fixtures ? computeFormStats(data.fixtures.slice(0, 5), t.id) : null;
-        return { index: i + 1, team: t, standing: data?.standing, form, loading: data?.loading };
+        const fromFixtures = data?.fixtures?.length ? computeFormStats(data.fixtures.slice(0, 5), t.id) : null;
+        // Forme : vrais matchs d'abord ; sinon "form" de /teams/statistics ; sinon rien.
+        const sequence = fromFixtures?.sequence?.length ? fromFixtures.sequence : data?.formFallback || [];
+        const league = data?.league?.name || t.leagueName;
+        const leagueCountryMismatch = data?.league?.country && t.country && data.league.country !== t.country;
+        return {
+          index: i + 1,
+          team: t,
+          standing: data?.standing,
+          sequence,
+          league,
+          loading: data?.loading,
+          problems: data?.problems || [],
+          error: data?.error,
+          suspicious: isSuspiciousTeam(t) || !!leagueCountryMismatch,
+        };
       });
   }, [roster, query, countryFilter, leagueFilter, teamData]);
+
+  const suspiciousCount = roster.filter(isSuspiciousTeam).length;
+  // Raisons réelles (dédoublonnées) pour lesquelles certaines cases sont vides.
+  const reasons = useMemo(() => {
+    const set = new Map();
+    rows.forEach((r) => (r.error ? [r.error] : r.problems).forEach((m) => set.set(m, (set.get(m) || 0) + 1)));
+    return [...set.entries()].slice(0, 4);
+  }, [rows]);
 
   const handleExport = () => {
     exportToCSV(
       'equipes.csv',
       rows.map((r) => ({
         Equipe: r.team.name,
-        Championnat: r.team.leagueName || '',
+        Championnat: r.league || '',
+        ID_Championnat: teamData[r.team.id]?.league?.id ?? r.team.leagueId ?? '',
         Pays: r.team.country || '',
         ID_API: r.team.id,
         Position: r.standing?.rank ?? '',
@@ -68,6 +92,20 @@ export default function Teams() {
         <button className="btn" onClick={handleExport}><Download size={16} /> Exporter CSV</button>
       </div>
 
+      {suspiciousCount > 0 && (
+        <StatusMessage type="warning">
+          {suspiciousCount} équipe(s) semblent mal associées (équipe féminine, jeune, mauvais pays...).{' '}
+          <a href="/verifier-equipes" onClick={(e) => { e.preventDefault(); navigate('/verifier-equipes'); }} style={{ textDecoration: 'underline' }}>
+            Vérifier et corriger
+          </a>
+        </StatusMessage>
+      )}
+      {!initialLoading && reasons.length > 0 && (
+        <StatusMessage type="warning">
+          Certaines données sont indisponibles (saison {season}) : {reasons.map(([m, n]) => `${m}${n > 1 ? ` (×${n})` : ''}`).join(' — ')}
+        </StatusMessage>
+      )}
+
       <div className="btn-row" style={{ marginBottom: 16 }}>
         <input type="text" placeholder="Rechercher une équipe..." value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 200 }} />
         <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
@@ -91,13 +129,13 @@ export default function Teams() {
             {rows.map((r) => (
               <tr key={r.team.id} className="clickable" onClick={() => navigate(`/equipes/${r.team.id}`)}>
                 <td>{r.index}</td>
-                <td>{r.team.name}</td>
-                <td>{fmt(r.team.leagueName)}</td>
+                <td>{r.suspicious && <AlertTriangle size={13} color="var(--draw)" style={{ marginRight: 5, verticalAlign: '-2px' }} />}{r.team.name}</td>
+                <td>{r.loading ? <Skeleton width={90} height={14} /> : fmt(r.league)}</td>
                 <td>{fmt(r.team.country)}</td>
                 <td>{r.team.id}</td>
-                <td>{r.loading ? <Skeleton width={70} height={18} /> : <FormSequence sequence={r.form?.sequence || []} />}</td>
-                <td>{fmt(r.standing?.rank)}</td>
-                <td>{fmt(r.standing?.points)}</td>
+                <td>{r.loading ? <Skeleton width={70} height={18} /> : <FormSequence sequence={r.sequence} />}</td>
+                <td>{r.loading ? <Skeleton width={30} height={14} /> : fmt(r.standing?.rank)}</td>
+                <td>{r.loading ? <Skeleton width={30} height={14} /> : fmt(r.standing?.points)}</td>
               </tr>
             ))}
           </tbody>

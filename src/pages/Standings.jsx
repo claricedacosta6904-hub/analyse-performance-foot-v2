@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { useTeams } from '../context/TeamsContext';
 import { useEnsureAllTeamsData } from '../hooks/useEnsureData';
-import { EmptyState, fmt } from '../components/StatusMessage';
+import { EmptyState, fmt, StatusMessage } from '../components/StatusMessage';
 import { exportToCSV } from '../utils/csvExport';
 
 export default function Standings() {
-  const { roster, teamData } = useTeams();
+  const { roster, teamData, leagueTables } = useTeams();
   const { initialLoading } = useEnsureAllTeamsData();
 
   const leagues = useMemo(() => {
@@ -33,7 +33,7 @@ export default function Standings() {
 
   const handleExport = () => {
     if (!active) return;
-    const table = active.league.standings?.[0] || [];
+    const table = leagueTables[active.league.id] || [];
     exportToCSV(
       `classement-${active.league.name}.csv`,
       table.map((row) => ({
@@ -74,13 +74,15 @@ export default function Standings() {
         ))}
       </div>
 
-      {active && <StandingsTable league={active.league} highlightIds={[...active.teamIds]} />}
+      {active && <StandingsTable table={leagueTables[active.league.id] || []} highlightIds={[...active.teamIds]} />}
     </div>
   );
 }
 
-function StandingsTable({ league, highlightIds }) {
-  const table = league.standings?.[0] || [];
+function StandingsTable({ table, highlightIds }) {
+  if (table.length === 0) {
+    return <StatusMessage type="warning">Classement non disponible pour ce championnat (saison sélectionnée).</StatusMessage>;
+  }
   return (
     <div className="table-scroll">
       <table className="data-table">
