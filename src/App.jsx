@@ -13,6 +13,7 @@ import HomeStats from './pages/HomeStats';
 import AwayStats from './pages/AwayStats';
 import Analysis from './pages/Analysis';
 import SettingsPage from './pages/SettingsPage';
+import RepairTeams from './pages/RepairTeams';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/domicile" element={<HomeStats />} />
           <Route path="/exterieur" element={<AwayStats />} />
           <Route path="/analyse" element={<Analysis />} />
+          <Route path="/verifier-equipes" element={<RepairTeams />} />
           <Route path="/parametres" element={<SettingsPage />} />
         </Routes>
       </main>

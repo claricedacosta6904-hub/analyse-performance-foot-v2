@@ -402,3 +402,18 @@ textarea {
   z-index: 0;
   pointer-events: none;
 }
+
+.team-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.team-logo {
+  object-fit: contain;
+  flex-shrink: 0;
+}
