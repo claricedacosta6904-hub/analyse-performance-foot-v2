@@ -45,6 +45,7 @@ function getTTL(endpoint, params, data) {
     if (params.next) return UPCOMING_TTL;
     return CACHE_TTL.fixtures;
   }
+  if (endpoint === 'teams/statistics') return CACHE_TTL.standings; // 6 h
   const key = Object.keys(CACHE_TTL).find((k) => endpoint.startsWith(k));
   return key ? CACHE_TTL[key] : DEFAULT_TTL;
 }
@@ -188,9 +189,13 @@ exports.handler = async (event) => {
     const errorList = Array.isArray(data.errors) ? data.errors : Object.values(data.errors || {});
     if (errorList.length > 0) {
       console.error('[football.js] API-Football a renvoyé des erreurs:', JSON.stringify(data.errors));
+      // On joint la vraie raison renvoyée par API-Football (ex : "Free plans
+      // do not have access to this season") pour qu'elle soit visible dans
+      // l'interface — c'est la cause la plus fréquente des "Non disponible".
       return respond(200, {
         error: 'Erreur renvoyée par API-Football.',
         details: data.errors,
+        debug: JSON.stringify(data.errors).slice(0, 300),
         code: 'API_ERROR',
       });
     }
