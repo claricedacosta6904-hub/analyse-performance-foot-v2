@@ -43,25 +43,36 @@ export async function searchTeams(name) {
   return json.response || [];
 }
 
-// Récupère le classement d'une équipe (et le championnat associé) pour
-// une saison donnée. team + season -> l'API renvoie les ligues où
-// l'équipe évolue, avec le tableau de classement complet de chacune.
+// Championnats d'une équipe pour une saison (avec la couverture de données).
+export async function getLeaguesForTeam(teamId, season) {
+  const json = await callFunction('leagues', { team: teamId, season });
+  return json.response || [];
+}
+
+// Classement complet d'un championnat précis (league + season).
+export async function getStandingsForLeague(leagueId, season) {
+  const json = await callFunction('standings', { league: leagueId, season });
+  return json.response || [];
+}
+
+// Ancienne méthode (secours) : classements de toutes les compétitions d'une équipe.
 export async function getStandingsForTeam(teamId, season) {
   const json = await callFunction('standings', { team: teamId, season });
   return json.response || [];
 }
 
-// Récupère les derniers matchs d'une équipe.
-export async function getFixturesForTeam(teamId, season, last = 10) {
-  const json = await callFunction('fixtures', { team: teamId, season, last });
+// Tous les matchs de la saison pour une équipe (passés, en cours, à venir).
+// On n'utilise PAS les paramètres last / next : ils ne sont pas disponibles
+// sur certains plans API-Football et faisaient échouer toute la requête.
+export async function getSeasonFixtures(teamId, season) {
+  const json = await callFunction('fixtures', { team: teamId, season });
   return { fixtures: json.response || [], meta: json._meta || {} };
 }
 
-// Récupère les prochains matchs d'une équipe (utile pour détecter un
-// match en direct ou à venir dans les heures qui suivent).
-export async function getNextFixturesForTeam(teamId, season, next = 3) {
-  const json = await callFunction('fixtures', { team: teamId, season, next });
-  return { fixtures: json.response || [], meta: json._meta || {} };
+// Statistiques de saison (contient la forme récente, ex "WDLWW") — secours.
+export async function getTeamStatistics(teamId, leagueId, season) {
+  const json = await callFunction('teams/statistics', { team: teamId, league: leagueId, season });
+  return json.response || null;
 }
 
 export { ApiError };
