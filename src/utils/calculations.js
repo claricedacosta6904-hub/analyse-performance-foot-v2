@@ -34,7 +34,8 @@ export function computeFormStats(fixtures, teamId) {
   const losses = played.filter((f) => f.result === 'L').length;
   const points = played.reduce((sum, f) => sum + pointsForResult(f.result), 0);
   const maxPoints = played.length * 3;
-  const formPercent = maxPoints > 0 ? (points / maxPoints) * 100 : 0;
+  // null (et non 0) quand aucun match n'est joué : on n'invente pas de 0 %.
+  const formPercent = maxPoints > 0 ? Math.round((points / maxPoints) * 1000) / 10 : null;
 
   const goalsFor = played.reduce((sum, f) => {
     const isHome = f.fixture.teams.home.id === teamId;
@@ -52,7 +53,7 @@ export function computeFormStats(fixtures, teamId) {
     losses,
     points,
     maxPoints,
-    formPercent: Number(formPercent.toFixed(2)),
+    formPercent: formPercent === null ? null : Number(formPercent.toFixed(2)),
     goalsFor,
     goalsAgainst,
     goalDiff: goalsFor - goalsAgainst,
